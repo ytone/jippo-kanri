@@ -768,9 +768,17 @@ async function backupToDrive() {
     if (res.ok) {
       const now = new Date().toLocaleString('ja-JP');
       localStorage.setItem('drive_last_backup', now);
-      document.getElementById('drive-last-backup').textContent = '最終バックアップ: ' + now;
-      alert('☁️ Google Driveにバックアップしました！');
-    } else { throw new Error('保存に失敗しました'); }
+      const el = document.getElementById('drive-last-backup');
+      if (el) el.textContent = '最終バックアップ: ' + now;
+      showToast('☁️ Google Driveにバックアップしました！');
+    } else {
+      const errBody = await res.json().catch(() => ({}));
+      if (res.status === 403 || (errBody.error && errBody.error.status === 'PERMISSION_DENIED')) {
+        showBackupErrorDialog();
+      } else {
+        throw new Error('保存に失敗しました (HTTP ' + res.status + ')');
+      }
+    }
   } catch(e) { alert('バックアップに失敗しました: ' + e.message); }
 }
 
@@ -835,6 +843,12 @@ window.addEventListener('beforeinstallprompt', e => {
 window.addEventListener('appinstalled', () => {
   hideBanner();
   deferredPrompt = null;
+  // ホーム追加後、バックアップ未設定なら案内
+  setTimeout(() => {
+    if (!localStorage.getItem('drive_last_backup')) {
+      showBackupSuggestionBanner();
+    }
+  }, 2000);
 });
 
 function installPWA() {
@@ -895,6 +909,53 @@ function bannerDismiss() {
 
 function hideBanner() {
   document.getElementById('install-banner').classList.remove('show');
+}
+
+// ===== トースト通知 =====
+function showToast(msg) {
+  let toast = document.getElementById('toast-msg');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast-msg';
+    toast.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#2D3A2E;color:#fff;padding:12px 20px;border-radius:24px;font-size:14px;font-weight:600;z-index:300;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity 0.3s;white-space:nowrap;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+}
+
+// Drive API未有効エラーダイアログ
+function showBackupErrorDialog() {
+  const banner = document.getElementById('install-banner');
+  const desc = document.getElementById('banner-desc');
+  const steps = document.getElementById('banner-steps');
+  const btn = document.getElementById('banner-install-btn');
+  banner.querySelector('.banner-title').textContent = '⚠️ バックアップの設定が必要です';
+  desc.textContent = 'Google Drive APIが有効になっていません。以下の手順で有効化してください。';
+  steps.innerHTML = '<b>①</b> <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" style="color:var(--brass-light)">Google Drive APIのページ</a> を開く<br><b>②</b>「有効にする」をタップ<br><b>③</b> このアプリに戻って再度バックアップ';
+  steps.style.display = 'block';
+  btn.textContent = 'わかった';
+  btn.onclick = () => hideBanner();
+  banner.querySelector('.btn-dismiss').style.display = 'none';
+  banner.classList.add('show');
+}
+
+// ホーム追加後バックアップ案内バナー
+function showBackupSuggestionBanner() {
+  const banner = document.getElementById('install-banner');
+  const desc = document.getElementById('banner-desc');
+  const steps = document.getElementById('banner-steps');
+  const btn = document.getElementById('banner-install-btn');
+  banner.querySelector('.banner-title').textContent = '☁️ データのバックアップを設定しよう';
+  desc.textContent = 'スマホを紛失してもデータを守るためにGoogle Driveバックアップを設定しておきましょう。';
+  steps.style.display = 'none';
+  btn.textContent = '設定画面へ';
+  btn.onclick = () => { hideBanner(); showPage('settings'); };
+  const dismissBtn = banner.querySelector('.btn-dismiss');
+  dismissBtn.style.display = 'block';
+  dismissBtn.textContent = 'あとで';
+  banner.classList.add('show');
 }
 
 // ===== PDF出力 =====
